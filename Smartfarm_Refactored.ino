@@ -12,8 +12,9 @@
 // ==========================================
 const char* mqtt_server = "e384381d24534ec1bdf7413845bacfa4.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
-const char* mqtt_user = "smartfarm-device";
-const char* mqtt_pass = "kla12345";
+// ต้องตรงกับ username/password ใน index.html
+const char* mqtt_user = "smartfarm";
+const char* mqtt_pass = "Kla12345";
 const char* ota_hostname = "smartfarm-esp8266";
 const char* ota_password = "SmartFarmOTA";
 
