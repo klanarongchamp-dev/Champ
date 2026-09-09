@@ -96,6 +96,7 @@
     const relaySeen = [null, null, null, null];
     let mqttClient = null;
     let deviceSeen = null;
+    let currentMode = 'UNKNOWN';
 
     function log(message) {
       const line = `${new Date().toLocaleTimeString('th-TH')} - ${message}`;
@@ -121,7 +122,7 @@
           <h3>${name}</h3>
           <div id="relayState${index}" class="relay-state ${relayStates[index] ? 'on' : ''}">${relayStates[index] ? 'ON' : 'OFF'}</div>
           <div id="relaySeen${index}" class="relay-meta">${formatSeen(relaySeen[index])}</div>
-          <button class="${relayStates[index] ? 'danger' : 'primary'}" onclick="toggleRelay(${index})" ${mqttClient?.connected ? '' : 'disabled'}>${relayStates[index] ? 'ปิดรีเลย์' : 'เปิดรีเลย์'}</button>
+          <button class="${relayStates[index] ? 'danger' : 'primary'}" onclick="toggleRelay(${index})" ${mqttClient?.connected && currentMode !== 'AUTO' ? '' : 'disabled'}>${relayStates[index] ? 'ปิดรีเลย์' : 'เปิดรีเลย์'}</button>
         </article>`).join('');
     }
 
@@ -147,7 +148,7 @@
           if (index >= 0 && index < 4) { relayStates[index] = message === 'ON'; relaySeen[index] = Date.now(); deviceSeen = relaySeen[index]; renderRelays(); log(`${relayNames[index]}: ${message}`); }
           return;
         }
-        if (topicName === 'farm/mode') { document.getElementById('modeValue').textContent = message; log(`โหมด: ${message}`); }
+        if (topicName === 'farm/mode' && (message === 'AUTO' || message === 'MANUAL')) { currentMode = message; document.getElementById('modeValue').textContent = currentMode; renderRelays(); log(`โหมด: ${message}`); }
         if (topicName === 'farm/status') { deviceSeen = message === 'ONLINE' ? Date.now() : null; updateDeviceStatus(message); }
       });
       mqttClient.on('error', error => log(`MQTT error: ${error.message}`));
@@ -155,7 +156,7 @@
     }
 
     function disconnectMQTT() { if (mqttClient) mqttClient.end(true); }
-    function toggleRelay(index) { if (!mqttClient?.connected) return log('ยังไม่ได้เชื่อมต่อ MQTT'); mqttClient.publish(topic(index, 'command'), relayStates[index] ? 'OFF' : 'ON'); }
+    function toggleRelay(index) { if (!mqttClient?.connected) return log('ยังไม่ได้เชื่อมต่อ MQTT'); if (currentMode === 'AUTO') return log('ต้องเปลี่ยนเป็น MANUAL ก่อนควบคุมรีเลย์'); mqttClient.publish(topic(index, 'command'), relayStates[index] ? 'OFF' : 'ON'); }
     function setMode(mode) { if (!mqttClient?.connected) return log('ยังไม่ได้เชื่อมต่อ MQTT'); mqttClient.publish('farm/mode', mode); log(`ส่งคำสั่งโหมด: ${mode}`); }
     function updateDeviceStatus(message) {
       const online = message === 'ONLINE';

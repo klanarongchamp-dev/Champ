@@ -48,6 +48,10 @@ struct ScheduleData {
   char offTime2[6]; // "HH:MM"
 };
 
+#define EEPROM_SIZE 32
+#define EEPROM_MODE_OFFSET sizeof(ScheduleData)
+#define EEPROM_MODE_MAGIC 0xA5
+
 ScheduleData schedules;
 String lastScheduleAction = "";
 
@@ -55,6 +59,9 @@ String lastScheduleAction = "";
 // ตัวแปรระบบ
 // ==========================================
 bool isAutoMode = true; // โหมดการทำงาน (true = Auto, false = Manual)
+bool modeReceivedFromBroker = false;
+unsigned long modeSyncDeadline = 0;
+bool rtcAvailable = false;
 bool relayState[RELAY_COUNT] = {false, false, false, false};
 
 // ตัวแปรสำหรับจัดการเวลา (ไม่ต้องใช้ delay)
@@ -79,7 +86,7 @@ PubSubClient client(espClient);
 // ฟังก์ชันอ่าน/เขียน EEPROM
 // ==========================================
 void loadScheduleFromEEPROM() {
-  EEPROM.begin(sizeof(ScheduleData));
+  EEPROM.begin(EEPROM_SIZE);
   EEPROM.get(0, schedules);
   
   // ตรวจสอบข้อมูลขยะ ถ้าใช่ให้ตั้งค่าเริ่มต้น
@@ -94,15 +101,36 @@ void loadScheduleFromEEPROM() {
   } else {
     Serial.println("Loaded Schedule from EEPROM");
   }
+  uint8_t modeMagic = EEPROM.read(EEPROM_MODE_OFFSET);
+  uint8_t storedMode = EEPROM.read(EEPROM_MODE_OFFSET + 1);
+  if (modeMagic == EEPROM_MODE_MAGIC && storedMode <= 1) {
+    isAutoMode = storedMode == 1;
+    Serial.print("Loaded mode from EEPROM: ");
+    Serial.println(isAutoMode ? "AUTO" : "MANUAL");
+  } else {
+    isAutoMode = true;
+    EEPROM.write(EEPROM_MODE_OFFSET, EEPROM_MODE_MAGIC);
+    EEPROM.write(EEPROM_MODE_OFFSET + 1, 1);
+    EEPROM.commit();
+    Serial.println("Initialized default mode: AUTO");
+  }
   EEPROM.end();
 }
 
 void saveScheduleToEEPROM() {
-  EEPROM.begin(sizeof(ScheduleData));
+  EEPROM.begin(EEPROM_SIZE);
   EEPROM.put(0, schedules);
   EEPROM.commit();
   EEPROM.end();
   Serial.println("Saved Schedule to EEPROM");
+}
+
+void saveModeToEEPROM() {
+  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.write(EEPROM_MODE_OFFSET, EEPROM_MODE_MAGIC);
+  EEPROM.write(EEPROM_MODE_OFFSET + 1, isAutoMode ? 1 : 0);
+  EEPROM.commit();
+  EEPROM.end();
 }
 
 // ==========================================
@@ -130,11 +158,10 @@ void setPump(bool state) {
 // ฟังก์ชันส่งข้อมูลผ่าน MQTT (Publish)
 // ==========================================
 void publishTime() {
-  if (!rtc.begin()) return;
-  
+  if (!rtcAvailable) return;
   DateTime now = rtc.now();
   char timeString[20];
-  sprintf(timeString, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+  snprintf(timeString, sizeof(timeString), "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
   client.publish(topic_time, timeString, true);
 }
 
@@ -240,6 +267,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       Serial.println("Ignored: invalid mode");
       return;
     }
+    modeReceivedFromBroker = true;
+    saveModeToEEPROM();
     if (previousMode != isAutoMode) {
       Serial.print("Mode changed to ");
       Serial.println(isAutoMode ? "AUTO" : "MANUAL");
@@ -288,10 +317,13 @@ void connectMQTT() {
       client.subscribe("farm/relay/+/command");
       client.subscribe(topic_mode);
       client.subscribe(topic_schedule);
-      
-      // ส่งสถานะเริ่มต้น
+
+      // รอ retained mode จาก broker ก่อน ห้าม publish AUTO ทับค่าที่ผู้ใช้เลือกไว้
+      modeReceivedFromBroker = false;
+      modeSyncDeadline = millis() + 2000;
+
+      // ส่งเฉพาะสถานะเอาต์พุตที่เป็นของบอร์ดนี้
       for (uint8_t i = 0; i < RELAY_COUNT; i++) publishRelayStatus(i);
-      publishMode();
       publishHeartbeat();
       lastHeartbeat = millis();
     } else {
@@ -305,11 +337,11 @@ void connectMQTT() {
 // ฟังก์ชันตรวจสอบตารางเวลา (Schedule)
 // ==========================================
 void checkSchedule() {
-  if (!isAutoMode || !rtc.begin()) return;
+  if (!isAutoMode || !rtcAvailable) return;
   
   DateTime now = rtc.now();
   char buf[6];
-  sprintf(buf, "%02d:%02d", now.hour(), now.minute());
+  snprintf(buf, sizeof(buf), "%02d:%02d", now.hour(), now.minute());
   String currentTime = String(buf);
   
   // Schedule 1 ON
@@ -380,7 +412,9 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
   if (!rtc.begin()) {
     Serial.println("WARNING: RTC NOT FOUND!");
+    rtcAvailable = false;
   } else {
+    rtcAvailable = true;
     Serial.println("RTC OK");
     if (rtc.lostPower()) {
       Serial.println("RTC lost power, let's set the time!");
@@ -418,6 +452,12 @@ void loop() {
     connectMQTT();
   } else {
     client.loop();
+    // กรณี broker ยังไม่มี retained mode ให้ใช้ค่าที่เก็บไว้ใน EEPROM
+    if (!modeReceivedFromBroker && modeSyncDeadline != 0 && millis() >= modeSyncDeadline) {
+      modeReceivedFromBroker = true;
+      publishMode();
+      Serial.println("No retained mode; published persisted mode");
+    }
   }
   
   unsigned long currentMillis = millis();

@@ -206,7 +206,7 @@
                     </div>
                     <div class="status-box">
                         <div class="label">โหมด</div>
-                        <div class="value" id="modeStatus">AUTO</div>
+                        <div class="value" id="modeStatus">UNKNOWN</div>
                     </div>
                     <div class="status-box">
                         <div class="label">เวลา</div>
@@ -378,6 +378,7 @@
         let relayStates = [false, false, false, false];
         let relayLastSeen = [null, null, null, null];
         let deviceLastSeen = null;
+        let currentMode = 'UNKNOWN';
 
         function relayTopic(index, type) {
             return `farm/relay/${index + 1}/${type}`;
@@ -391,7 +392,7 @@
                         <div class="label" id="relay-label-${index}">${name}</div>
                         <div class="value" id="relay-status-${index}">${relayStates[index] ? 'ON' : 'OFF'}</div>
                         <div id="relay-seen-${index}" style="font-size:11px; opacity:.65; margin-top:4px;">ยังไม่มีข้อมูล</div>
-                        <button class="btn ${relayStates[index] ? 'btn-danger' : 'btn-primary'}" onclick="toggleRelay(${index})" style="margin: 12px 0 0; padding: 10px;">
+                        <button class="btn ${relayStates[index] ? 'btn-danger' : 'btn-primary'}" onclick="toggleRelay(${index})" ${currentMode === 'AUTO' ? 'disabled' : ''} style="margin: 12px 0 0; padding: 10px;">
                             ${relayStates[index] ? 'ปิด' : 'เปิด'}
                         </button>
                     </div>`).join('');
@@ -417,6 +418,7 @@
 
         function toggleRelay(index) {
             if (!mqttClient || !mqttClient.connected) return showToast('ไม่ได้เชื่อมต่อ MQTT');
+            if (currentMode === 'AUTO') return showToast('เปลี่ยนเป็นโหมด Manual ก่อนควบคุมรีเลย์');
             const nextState = !relayStates[index];
             mqttClient.publish(relayTopic(index, 'command'), nextState ? 'ON' : 'OFF');
             addLog(`${relayNames[index]}: ${nextState ? 'เปิด' : 'ปิด'}`);
@@ -599,7 +601,10 @@
                         document.getElementById('light').textContent = msg;
                         break;
                     case 'farm/mode':
-                        document.getElementById('modeStatus').textContent = msg;
+                        if (msg !== 'AUTO' && msg !== 'MANUAL') break;
+                        currentMode = msg;
+                        document.getElementById('modeStatus').textContent = currentMode;
+                        renderRelayUI();
                         addLog(`โหมด: ${msg}`);
                         break;
                     case 'farm/temp':
@@ -628,8 +633,8 @@
         function setPumpMode(mode) {
             if (mqttClient && mqttClient.connected) {
                 mqttClient.publish('farm/mode', mode);
-                addLog(`เปลี่ยนโหมด: ${mode}`);
-                showToast(`โหมด: ${mode}`);
+                addLog(`ส่งคำสั่งโหมด: ${mode}`);
+                showToast(`กำลังเปลี่ยนเป็นโหมด: ${mode}`);
             } else {
                 showToast('ไม่ได้เชื่อมต่อ MQTT');
             }
