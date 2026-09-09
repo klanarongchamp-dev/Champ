@@ -560,7 +560,7 @@
                 document.getElementById('nodeStatus').style.color = '#10b981';
                 addLog('เชื่อมต่อ MQTT สำเร็จ');
                 
-                mqttClient.subscribe(['farm/pump/status', 'farm/relay/+/status', 'farm/time', 'farm/soil', 'farm/light', 'farm/status', 'farm/mode', 'farm/temp', 'farm/hum']);
+                mqttClient.subscribe(['farm/pump/status', 'farm/relay/+/status', 'farm/time', 'farm/soil', 'farm/light', 'farm/status', 'farm/mode/state', 'farm/temp', 'farm/hum']);
             });
 
             mqttClient.on('message', (topic, message) => {
@@ -600,7 +600,7 @@
                     case 'farm/light':
                         document.getElementById('light').textContent = msg;
                         break;
-                    case 'farm/mode':
+                    case 'farm/mode/state':
                         if (msg !== 'AUTO' && msg !== 'MANUAL') break;
                         currentMode = msg;
                         document.getElementById('modeStatus').textContent = currentMode;
@@ -632,7 +632,7 @@
 
         function setPumpMode(mode) {
             if (mqttClient && mqttClient.connected) {
-                mqttClient.publish('farm/mode', mode);
+                mqttClient.publish('farm/mode/set', mode);
                 addLog(`ส่งคำสั่งโหมด: ${mode}`);
                 showToast(`กำลังเปลี่ยนเป็นโหมด: ${mode}`);
             } else {

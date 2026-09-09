@@ -27,7 +27,8 @@
     - `farm/pump`: รับคำสั่งเปิด/ปิดปั๊ม (เฉพาะตอน Manual Mode)
     - `farm/status`: ส่งสถานะปั๊ม (ON/OFF) และ Heartbeat (ONLINE)
     - `farm/time`: ส่งเวลาปัจจุบันจาก RTC ทุก 1 วินาที
-    - `farm/mode`: รับคำสั่งและส่งสถานะโหมด (AUTO/MANUAL)
+    - `farm/mode/set`: รับคำสั่งเปลี่ยนโหมด (AUTO/MANUAL)
+    - `farm/mode/state`: ส่งสถานะโหมดปัจจุบัน (AUTO/MANUAL) แบบ retained
     - `farm/schedule`: รับตารางเวลาจาก MQTT
 16. **เพิ่มระบบรับเวลารดน้ำจาก MQTT**: สามารถส่งเวลามาตั้งค่าได้ผ่าน topic `farm/schedule` (รูปแบบ: HH:MM,HH:MM,HH:MM,HH:MM)
 17. **เพิ่มระบบเก็บค่า Schedule ใน EEPROM**: บันทึกตารางเวลาลง EEPROM อัตโนมัติเมื่อมีการตั้งค่าใหม่ และโหลดกลับมาตอนบูตเครื่อง
@@ -45,7 +46,8 @@
 | `farm/pump/status` | Publish | ส่งสถานะปั๊ม (`ON`/`OFF`) เมื่อมีการเปลี่ยนแปลง |
 | `farm/status` | Publish | ส่ง `ONLINE` ทุก 30 วินาที (Heartbeat) และ `OFFLINE` เมื่อหลุดการเชื่อมต่อ (LWT) |
 | `farm/time` | Publish | ส่งเวลาปัจจุบันจาก RTC ในรูปแบบ `HH:MM:SS` ทุก 1 วินาที |
-| `farm/mode` | Sub/Pub | รับคำสั่งและส่งสถานะโหมดการทำงาน (`AUTO` หรือ `MANUAL`) |
+| `farm/mode/set` | Subscribe | รับคำสั่งเปลี่ยนโหมดการทำงาน (`AUTO` หรือ `MANUAL`) |
+| `farm/mode/state` | Publish | ส่งสถานะโหมดการทำงานปัจจุบัน (`AUTO` หรือ `MANUAL`) แบบ retained |
 | `farm/schedule` | Subscribe | รับตารางเวลาใหม่ในรูปแบบ `HH:MM,HH:MM,HH:MM,HH:MM` (เวลาเปิด1,เวลาปิด1,เวลาเปิด2,เวลาปิด2) |
 
 ## วิธีการใช้งาน

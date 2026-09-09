@@ -24,7 +24,8 @@ const char* ota_password = "SmartFarmOTA";
 const char* topic_pump     = "farm/pump"; // รองรับคำสั่งเดิมสำหรับรีเลย์ช่อง 1
 const char* topic_status   = "farm/status";
 const char* topic_time     = "farm/time";
-const char* topic_mode     = "farm/mode";
+const char* topic_mode_command = "farm/mode/set";
+const char* topic_mode_state   = "farm/mode/state";
 const char* topic_schedule = "farm/schedule";
 // รีเลย์ช่อง 1-4 ใช้ farm/relay/<ช่อง>/command และ /status
 
@@ -60,8 +61,6 @@ String lastScheduleAction = "";
 // ตัวแปรระบบ
 // ==========================================
 bool isAutoMode = true; // โหมดการทำงาน (true = Auto, false = Manual)
-bool modeReceivedFromBroker = false;
-unsigned long modeSyncDeadline = 0;
 bool rtcAvailable = false;
 bool rtcDetected = false;
 bool ntpAvailable = false;
@@ -234,7 +233,7 @@ void publishDHT() {
 }
 
 void publishMode() {
-  client.publish(topic_mode, isAutoMode ? "AUTO" : "MANUAL", true);
+  client.publish(topic_mode_state, isAutoMode ? "AUTO" : "MANUAL", true);
 }
 
 void setupOTA() {
@@ -300,7 +299,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     }
   }
   // 2. เปลี่ยนโหมด Auto/Manual
-  else if (topicString == topic_mode) {
+  else if (topicString == topic_mode_command) {
     bool previousMode = isAutoMode;
     if (msg == "AUTO") {
       isAutoMode = true;
@@ -310,7 +309,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       Serial.println("Ignored: invalid mode");
       return;
     }
-    modeReceivedFromBroker = true;
     saveModeToEEPROM();
     if (previousMode != isAutoMode) {
       Serial.print("Mode changed to ");
@@ -356,17 +354,17 @@ void connectMQTT() {
       Serial.println("Connected!");
       
       // สมัครรับข้อมูล Topics ที่ต้องการ
+      // ล้าง retained command เก่าที่อาจถูกส่งซ้ำตอน reconnect
+      client.publish(topic_mode_command, "", true);
       client.subscribe(topic_pump);
       client.subscribe("farm/relay/+/command");
-      client.subscribe(topic_mode);
+      client.subscribe(topic_mode_command);
       client.subscribe(topic_schedule);
-
-      // รอ retained mode จาก broker ก่อน ห้าม publish AUTO ทับค่าที่ผู้ใช้เลือกไว้
-      modeReceivedFromBroker = false;
-      modeSyncDeadline = millis() + 2000;
 
       // ส่งเฉพาะสถานะเอาต์พุตที่เป็นของบอร์ดนี้
       for (uint8_t i = 0; i < RELAY_COUNT; i++) publishRelayStatus(i);
+      // โหมดเป็น state ของบอร์ด ไม่รับ retained state กลับมาเป็นคำสั่ง
+      publishMode();
       publishHeartbeat();
       lastHeartbeat = millis();
     } else {
@@ -500,12 +498,6 @@ void loop() {
     connectMQTT();
   } else {
     client.loop();
-    // กรณี broker ยังไม่มี retained mode ให้ใช้ค่าที่เก็บไว้ใน EEPROM
-    if (!modeReceivedFromBroker && modeSyncDeadline != 0 && millis() >= modeSyncDeadline) {
-      modeReceivedFromBroker = true;
-      publishMode();
-      Serial.println("No retained mode; published persisted mode");
-    }
   }
   
   unsigned long currentMillis = millis();

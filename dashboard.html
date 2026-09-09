@@ -136,7 +136,7 @@
       mqttClient = mqtt.connect(broker, { username, password, clientId: `dashboard_${Math.random().toString(16).slice(2)}`, reconnectPeriod: 5000, clean: true });
       mqttClient.on('connect', () => {
         setConnection(true, 'เชื่อมต่อแล้ว');
-        mqttClient.subscribe(['farm/relay/+/status', 'farm/status', 'farm/mode']);
+        mqttClient.subscribe(['farm/relay/+/status', 'farm/status', 'farm/mode/state']);
         log('MQTT connected and subscribed');
         renderRelays();
       });
@@ -148,7 +148,7 @@
           if (index >= 0 && index < 4) { relayStates[index] = message === 'ON'; relaySeen[index] = Date.now(); deviceSeen = relaySeen[index]; renderRelays(); log(`${relayNames[index]}: ${message}`); }
           return;
         }
-        if (topicName === 'farm/mode' && (message === 'AUTO' || message === 'MANUAL')) { currentMode = message; document.getElementById('modeValue').textContent = currentMode; renderRelays(); log(`โหมด: ${message}`); }
+        if (topicName === 'farm/mode/state' && (message === 'AUTO' || message === 'MANUAL')) { currentMode = message; document.getElementById('modeValue').textContent = currentMode; renderRelays(); log(`โหมด: ${message}`); }
         if (topicName === 'farm/status') { deviceSeen = message === 'ONLINE' ? Date.now() : null; updateDeviceStatus(message); }
       });
       mqttClient.on('error', error => log(`MQTT error: ${error.message}`));
@@ -157,7 +157,7 @@
 
     function disconnectMQTT() { if (mqttClient) mqttClient.end(true); }
     function toggleRelay(index) { if (!mqttClient?.connected) return log('ยังไม่ได้เชื่อมต่อ MQTT'); if (currentMode === 'AUTO') return log('ต้องเปลี่ยนเป็น MANUAL ก่อนควบคุมรีเลย์'); mqttClient.publish(topic(index, 'command'), relayStates[index] ? 'OFF' : 'ON'); }
-    function setMode(mode) { if (!mqttClient?.connected) return log('ยังไม่ได้เชื่อมต่อ MQTT'); mqttClient.publish('farm/mode', mode); log(`ส่งคำสั่งโหมด: ${mode}`); }
+    function setMode(mode) { if (!mqttClient?.connected) return log('ยังไม่ได้เชื่อมต่อ MQTT'); mqttClient.publish('farm/mode/set', mode); log(`ส่งคำสั่งโหมด: ${mode}`); }
     function updateDeviceStatus(message) {
       const online = message === 'ONLINE';
       document.getElementById('deviceDot').className = `dot ${online ? 'online' : 'offline'}`;
