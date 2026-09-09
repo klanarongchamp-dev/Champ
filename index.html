@@ -469,7 +469,8 @@
 
         // ==================== MQTT CONNECTION ====================
         function initMQTT() {
-            const brokerUrl = 'wss://broker.hivemq.com:8884/mqtt';
+            // HiveMQ Cloud: browser ใช้ TLS WebSocket port 8884
+            const brokerUrl = 'wss://e384381d24534ec1bdf7413845bacfa4.s1.eu.hivemq.cloud:8884/mqtt';
             mqttClient = mqtt.connect(brokerUrl, {
                 clientId: 'smartfarm_' + Math.random().toString(16).substr(2, 9),
                 username: 'smartfarm',
@@ -607,11 +608,16 @@
 
         // ==================== SCHEDULE ====================
         function showScheduleEditor() {
-            const time = prompt('ใส่เวลา (HH:MM):');
-            if (time && mqttClient && mqttClient.connected) {
-                mqttClient.publish('farm/schedule', time);
-                addLog(`ตั้งตารางเวลา: ${time}`);
-                showToast('บันทึกตารางเวลา: ' + time);
+            const schedule = prompt('ใส่เวลา 4 ค่า คั่นด้วย comma (เช่น 06:00,06:10,17:00,17:10):');
+            const schedulePattern = /^([01]\d|2[0-3]):[0-5]\d,([01]\d|2[0-3]):[0-5]\d,([01]\d|2[0-3]):[0-5]\d,([01]\d|2[0-3]):[0-5]\d$/;
+            if (schedule && !schedulePattern.test(schedule)) {
+                showToast('รูปแบบเวลาไม่ถูกต้อง');
+                return;
+            }
+            if (schedule && mqttClient && mqttClient.connected) {
+                mqttClient.publish('farm/schedule', schedule);
+                addLog(`ตั้งตารางเวลา: ${schedule}`);
+                showToast('บันทึกตารางเวลา: ' + schedule);
             }
         }
 

@@ -9,13 +9,14 @@
 // ==========================================
 // การตั้งค่า MQTT (HiveMQ Cloud)
 // ==========================================
-const char* mqtt_server = "650188a0ee2b4367b7c131fb385590a9.s1.eu.hivemq.cloud";
+const char* mqtt_server = "e384381d24534ec1bdf7413845bacfa4.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
 const char* mqtt_user = "smartfarm";
 const char* mqtt_pass = "Kla12345";
 
 // MQTT Topics
 const char* topic_pump     = "farm/pump";
+const char* topic_pump_status = "farm/pump/status";
 const char* topic_status   = "farm/status";
 const char* topic_time     = "farm/time";
 const char* topic_mode     = "farm/mode";
@@ -107,7 +108,7 @@ void setPump(bool state) {
   Serial.println(state ? "ON" : "OFF");
   
   // ส่งสถานะไปยัง MQTT
-  client.publish(topic_status, state ? "ON" : "OFF", true);
+  client.publish(topic_pump_status, state ? "ON" : "OFF", true);
 }
 
 // ==========================================
@@ -204,7 +205,7 @@ void connectMQTT() {
       client.subscribe(topic_schedule);
       
       // ส่งสถานะเริ่มต้น
-      client.publish(topic_status, pumpState ? "ON" : "OFF", true);
+      client.publish(topic_pump_status, pumpState ? "ON" : "OFF", true);
       publishMode();
     } else {
       Serial.print("Failed, rc=");
