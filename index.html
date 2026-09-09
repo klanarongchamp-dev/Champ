@@ -238,10 +238,10 @@
                 </div>
             </div>
 
-            <!-- PUMP CONTROL -->
+            <!-- RELAY CONTROL -->
             <div class="card">
-                <div class="section-title"><i class="fas fa-water"></i> ควบคุมปั๊มน้ำ</div>
-                <button class="btn btn-primary" onclick="togglePump()"><i class="fas fa-toggle-on"></i> เปิด/ปิดปั๊มน้ำ</button>
+                <div class="section-title"><i class="fas fa-toggle-on"></i> ควบคุมรีเลย์ 4 ช่อง</div>
+                <div id="relayGrid" class="status-grid"></div>
                 <div style="display: flex; gap: 12px;">
                     <button class="btn btn-outline" onclick="setPumpMode('AUTO')" style="flex: 1;"><i class="fas fa-robot"></i> โหมด Auto</button>
                     <button class="btn btn-outline" onclick="setPumpMode('MANUAL')" style="flex: 1;"><i class="fas fa-hand-paper"></i> โหมด Manual</button>
@@ -323,6 +323,11 @@
                     <i class="fas fa-sign-out-alt"></i>
                 </div>
             </div>
+            <div class="card">
+                <div class="section-title"><i class="fas fa-tag"></i> ตั้งชื่อรีเลย์</div>
+                <p style="font-size: 13px; opacity: 0.7; margin-bottom: 16px;">ชื่อจะบันทึกไว้ในเบราว์เซอร์เครื่องนี้</p>
+                <div id="relayNameSettings"></div>
+            </div>
 
             <!-- ACTIVITY LOG -->
             <div class="card">
@@ -369,6 +374,49 @@
         let tempChart = null;
         let humChart = null;
         let activityLog = JSON.parse(localStorage.getItem('smartfarm_logs')) || [];
+        let relayNames = JSON.parse(localStorage.getItem('smartfarm_relayNames')) || ['รีเลย์ 1', 'รีเลย์ 2', 'รีเลย์ 3', 'รีเลย์ 4'];
+        let relayStates = [false, false, false, false];
+
+        function relayTopic(index, type) {
+            return `farm/relay/${index + 1}/${type}`;
+        }
+
+        function renderRelayUI() {
+            const grid = document.getElementById('relayGrid');
+            if (grid) {
+                grid.innerHTML = relayNames.map((name, index) => `
+                    <div class="status-box">
+                        <div class="label" id="relay-label-${index}">${name}</div>
+                        <div class="value" id="relay-status-${index}">${relayStates[index] ? 'ON' : 'OFF'}</div>
+                        <button class="btn ${relayStates[index] ? 'btn-danger' : 'btn-primary'}" onclick="toggleRelay(${index})" style="margin: 12px 0 0; padding: 10px;">
+                            ${relayStates[index] ? 'ปิด' : 'เปิด'}
+                        </button>
+                    </div>`).join('');
+            }
+            const settings = document.getElementById('relayNameSettings');
+            if (settings) {
+                settings.innerHTML = relayNames.map((name, index) => `
+                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+                        <span style="min-width:62px;">ช่อง ${index + 1}</span>
+                        <input class="input-control" value="${name.replace(/"/g, '&quot;')}" maxlength="30" onchange="saveRelayName(${index}, this.value)" style="margin:0;">
+                    </div>`).join('');
+            }
+        }
+
+        function saveRelayName(index, name) {
+            const cleanName = name.trim() || `รีเลย์ ${index + 1}`;
+            relayNames[index] = cleanName;
+            localStorage.setItem('smartfarm_relayNames', JSON.stringify(relayNames));
+            renderRelayUI();
+            addLog(`เปลี่ยนชื่อรีเลย์ช่อง ${index + 1}: ${cleanName}`);
+        }
+
+        function toggleRelay(index) {
+            if (!mqttClient || !mqttClient.connected) return showToast('ไม่ได้เชื่อมต่อ MQTT');
+            const nextState = !relayStates[index];
+            mqttClient.publish(relayTopic(index, 'command'), nextState ? 'ON' : 'OFF');
+            addLog(`${relayNames[index]}: ${nextState ? 'เปิด' : 'ปิด'}`);
+        }
 
         // ==================== LOGGING ====================
         function addLog(message) {
@@ -485,18 +533,27 @@
                 document.getElementById('nodeStatus').style.color = '#10b981';
                 addLog('เชื่อมต่อ MQTT สำเร็จ');
                 
-                mqttClient.subscribe(['farm/pump/status', 'farm/time', 'farm/soil', 'farm/light', 'farm/status', 'farm/mode', 'farm/temp', 'farm/hum']);
+                mqttClient.subscribe(['farm/pump/status', 'farm/relay/+/status', 'farm/time', 'farm/soil', 'farm/light', 'farm/status', 'farm/mode', 'farm/temp', 'farm/hum']);
             });
 
             mqttClient.on('message', (topic, message) => {
                 const msg = message.toString();
                 console.log(`${topic}: ${msg}`);
                 
+                const relayMatch = topic.match(/^farm\/relay\/(\d+)\/status$/);
+                if (relayMatch) {
+                    const index = Number(relayMatch[1]) - 1;
+                    if (index >= 0 && index < 4) {
+                        relayStates[index] = msg === 'ON';
+                        renderRelayUI();
+                        addLog(`${relayNames[index]}: ${msg}`);
+                    }
+                    return;
+                }
                 switch(topic) {
                     case 'farm/pump/status':
-                        document.getElementById('pumpStatus').textContent = msg === 'ON' ? 'ON' : 'OFF';
-                        document.getElementById('pumpStatus').style.color = msg === 'ON' ? '#ef4444' : '#10b981';
-                        addLog(`ปั๊มน้ำ: ${msg}`);
+                        relayStates[0] = msg === 'ON';
+                        renderRelayUI();
                         break;
                     case 'farm/time':
                         document.getElementById('rtcTime').textContent = msg;
@@ -532,19 +589,6 @@
                 document.getElementById('nodeStatus').style.color = '#ef4444';
                 addLog('ข้อผิดพลาด MQTT: ' + err.message);
             });
-        }
-
-        // ==================== PUMP CONTROL ====================
-        function togglePump() {
-            if (mqttClient && mqttClient.connected) {
-                const currentStatus = document.getElementById('pumpStatus').textContent;
-                const newStatus = currentStatus === 'ON' ? 'OFF' : 'ON';
-                mqttClient.publish('farm/pump', newStatus);
-                addLog(`สั่งปั๊มน้ำ: ${newStatus}`);
-                showToast(`ปั๊มน้ำ: ${newStatus}`);
-            } else {
-                showToast('ไม่ได้เชื่อมต่อ MQTT');
-            }
         }
 
         function setPumpMode(mode) {
@@ -684,6 +728,7 @@
                 document.body.classList.add('dark-mode');
             }
             
+            renderRelayUI();
             renderUserList();
             renderLogs();
             addLog('ระบบเริ่มต้นสำเร็จ');
