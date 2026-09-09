@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart Farm Relay Dashboard</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color: #172033; background: #f4f7fb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { color: white; background: linear-gradient(135deg, #0f9f6e, #087f5b); padding: 28px 20px; }
+    header h1 { max-width: 1100px; margin: 0 auto 6px; font-size: clamp(24px, 4vw, 36px); }
+    header p { max-width: 1100px; margin: 0 auto; opacity: .86; }
+    main { max-width: 1100px; margin: 24px auto; padding: 0 16px 48px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .card { background: white; border-radius: 18px; padding: 20px; box-shadow: 0 8px 24px rgba(20, 35, 60, .08); }
+    .card h2 { margin: 0 0 16px; font-size: 19px; }
+    .wide { grid-column: 1 / -1; }
+    label { display: block; font-size: 13px; color: #657084; margin: 10px 0 6px; }
+    input, select { width: 100%; border: 1px solid #d8dee8; border-radius: 10px; padding: 11px 12px; font: inherit; background: #fff; }
+    button { border: 0; border-radius: 10px; padding: 11px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    .primary { color: #fff; background: #0f9f6e; }
+    .danger { color: #fff; background: #dc3545; }
+    .outline { color: #0f9f6e; background: #fff; border: 1px solid #0f9f6e; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .row > * { flex: 1; }
+    .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; background: #9aa4b2; }
+    .dot.online { background: #16a34a; box-shadow: 0 0 0 4px #dcfce7; }
+    .dot.offline { background: #dc3545; box-shadow: 0 0 0 4px #fee2e2; }
+    .relay-card { display: flex; flex-direction: column; gap: 12px; }
+    .relay-card h3 { margin: 0; font-size: 18px; }
+    .relay-state { font-size: 28px; font-weight: 800; color: #64748b; }
+    .relay-state.on { color: #0f9f6e; }
+    .relay-meta { color: #718096; font-size: 12px; min-height: 18px; }
+    .mode { font-size: 30px; font-weight: 800; color: #0f9f6e; }
+    .logs { background: #111827; color: #d1fae5; border-radius: 12px; padding: 14px; min-height: 130px; max-height: 240px; overflow: auto; font: 12px/1.6 ui-monospace, monospace; }
+    .hint { color: #657084; font-size: 13px; line-height: 1.6; }
+    @media (max-width: 560px) { .row { display: grid; grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Smart Farm Relay Dashboard</h1>
+    <p>ควบคุมรีเลย์ 4 ช่องและมอนิเตอร์สถานะผ่าน MQTT over WebSocket</p>
+  </header>
+
+  <main>
+    <section class="card wide">
+      <h2>การเชื่อมต่อ MQTT</h2>
+      <div class="row">
+        <div><label for="broker">TLS WebSocket URL</label><input id="broker" value="wss://e384381d24534ec1bdf7413845bacfa4.s1.eu.hivemq.cloud:8884/mqtt"></div>
+        <div><label for="username">Username</label><input id="username" autocomplete="username" placeholder="HiveMQ username"></div>
+        <div><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" placeholder="HiveMQ password"></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="connectButton" onclick="connectMQTT()">เชื่อมต่อ</button>
+        <button class="outline" id="disconnectButton" onclick="disconnectMQTT()" disabled>ตัดการเชื่อมต่อ</button>
+        <div class="status"><span id="connectionDot" class="dot"></span><span id="connectionText">ยังไม่เชื่อมต่อ</span></div>
+      </div>
+      <p class="hint">หน้าเว็บใช้ WebSocket TLS port 8884 ส่วน ESP8266 ใช้ MQTT TLS port 8883 ต้องใช้ HiveMQ credentials ชุดเดียวกัน แต่ไม่ควรบันทึกรหัสผ่านไว้ในไฟล์ HTML</p>
+    </section>
+
+    <section class="grid" style="margin-top:16px">
+      <div class="card">
+        <h2>โหมดการทำงาน</h2>
+        <div class="mode" id="modeValue">UNKNOWN</div>
+        <div class="row" style="margin-top:14px">
+          <button class="outline" onclick="setMode('AUTO')">AUTO</button>
+          <button class="outline" onclick="setMode('MANUAL')">MANUAL</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>สถานะอุปกรณ์</h2>
+        <div class="status"><span id="deviceDot" class="dot"></span><span id="deviceText">รอข้อมูลจาก ESP8266</span></div>
+        <div class="relay-meta" id="deviceSeen" style="margin-top:12px">ยังไม่มี heartbeat</div>
+      </div>
+    </section>
+
+    <section class="card wide" style="margin-top:16px">
+      <h2>รีเลย์ 4 ช่อง</h2>
+      <div class="grid" id="relayGrid"></div>
+    </section>
+
+    <section class="card wide" style="margin-top:16px">
+      <div class="row"><h2 style="margin:0; flex:1">บันทึกเหตุการณ์</h2><button class="outline" onclick="clearLogs()">ล้างบันทึก</button></div>
+      <div class="logs" id="logs"></div>
+    </section>
+  </main>
+
+  <script>
+    const relayNames = ['รีเลย์ 1', 'รีเลย์ 2', 'รีเลย์ 3', 'รีเลย์ 4'];
+    const relayStates = [false, false, false, false];
+    const relaySeen = [null, null, null, null];
+    let mqttClient = null;
+    let deviceSeen = null;
+
+    function log(message) {
+      const line = `${new Date().toLocaleTimeString('th-TH')} - ${message}`;
+      const container = document.getElementById('logs');
+      container.textContent = `${line}\n${container.textContent}`.trim();
+    }
+
+    function topic(index, suffix) { return `farm/relay/${index + 1}/${suffix}`; }
+    function setConnection(connected, text) {
+      document.getElementById('connectionDot').className = `dot ${connected ? 'online' : 'offline'}`;
+      document.getElementById('connectionText').textContent = text;
+      document.getElementById('connectButton').disabled = connected;
+      document.getElementById('disconnectButton').disabled = !connected;
+    }
+
+    function formatSeen(value) {
+      return value ? `อัปเดตล่าสุด ${new Date(value).toLocaleTimeString('th-TH')}` : 'ยังไม่มีข้อมูล';
+    }
+
+    function renderRelays() {
+      document.getElementById('relayGrid').innerHTML = relayNames.map((name, index) => `
+        <article class="card relay-card">
+          <h3>${name}</h3>
+          <div id="relayState${index}" class="relay-state ${relayStates[index] ? 'on' : ''}">${relayStates[index] ? 'ON' : 'OFF'}</div>
+          <div id="relaySeen${index}" class="relay-meta">${formatSeen(relaySeen[index])}</div>
+          <button class="${relayStates[index] ? 'danger' : 'primary'}" onclick="toggleRelay(${index})" ${mqttClient?.connected ? '' : 'disabled'}>${relayStates[index] ? 'ปิดรีเลย์' : 'เปิดรีเลย์'}</button>
+        </article>`).join('');
+    }
+
+    function connectMQTT() {
+      if (mqttClient?.connected) return;
+      const broker = document.getElementById('broker').value.trim();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      if (!broker || !username || !password) return log('กรุณากรอก broker, username และ password');
+      setConnection(false, 'กำลังเชื่อมต่อ...');
+      mqttClient = mqtt.connect(broker, { username, password, clientId: `dashboard_${Math.random().toString(16).slice(2)}`, reconnectPeriod: 5000, clean: true });
+      mqttClient.on('connect', () => {
+        setConnection(true, 'เชื่อมต่อแล้ว');
+        mqttClient.subscribe(['farm/relay/+/status', 'farm/status', 'farm/mode']);
+        log('MQTT connected and subscribed');
+        renderRelays();
+      });
+      mqttClient.on('message', (topicName, payload) => {
+        const message = payload.toString();
+        const match = topicName.match(/^farm\/relay\/(\d+)\/status$/);
+        if (match) {
+          const index = Number(match[1]) - 1;
+          if (index >= 0 && index < 4) { relayStates[index] = message === 'ON'; relaySeen[index] = Date.now(); deviceSeen = relaySeen[index]; renderRelays(); log(`${relayNames[index]}: ${message}`); }
+          return;
+        }
+        if (topicName === 'farm/mode') { document.getElementById('modeValue').textContent = message; log(`โหมด: ${message}`); }
+        if (topicName === 'farm/status') { deviceSeen = message === 'ONLINE' ? Date.now() : null; updateDeviceStatus(message); }
+      });
+      mqttClient.on('error', error => log(`MQTT error: ${error.message}`));
+      mqttClient.on('close', () => { setConnection(false, 'ตัดการเชื่อมต่อ'); renderRelays(); });
+    }
+
+    function disconnectMQTT() { if (mqttClient) mqttClient.end(true); }
+    function toggleRelay(index) { if (!mqttClient?.connected) return log('ยังไม่ได้เชื่อมต่อ MQTT'); mqttClient.publish(topic(index, 'command'), relayStates[index] ? 'OFF' : 'ON'); }
+    function setMode(mode) { if (!mqttClient?.connected) return log('ยังไม่ได้เชื่อมต่อ MQTT'); mqttClient.publish('farm/mode', mode); log(`ส่งคำสั่งโหมด: ${mode}`); }
+    function updateDeviceStatus(message) {
+      const online = message === 'ONLINE';
+      document.getElementById('deviceDot').className = `dot ${online ? 'online' : 'offline'}`;
+      document.getElementById('deviceText').textContent = online ? 'ESP8266 ONLINE' : 'ESP8266 OFFLINE';
+      document.getElementById('deviceSeen').textContent = formatSeen(deviceSeen);
+    }
+    function clearLogs() { document.getElementById('logs').textContent = ''; }
+    setInterval(() => { if (deviceSeen && Date.now() - deviceSeen > 90000) updateDeviceStatus('OFFLINE'); }, 5000);
+    renderRelays();
+    log('Dashboard พร้อมใช้งาน');
+  </script>
+</body>
+</html>
