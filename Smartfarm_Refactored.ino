@@ -1,6 +1,7 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
+#include <ArduinoOTA.h>
 #include <PubSubClient.h>
 #include <Wire.h>
 #include <RTClib.h>
@@ -13,6 +14,8 @@ const char* mqtt_server = "e384381d24534ec1bdf7413845bacfa4.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
 const char* mqtt_user = "smartfarm";
 const char* mqtt_pass = "Kla12345";
+const char* ota_hostname = "smartfarm-esp8266";
+const char* ota_password = "SmartFarmOTA";
 
 // MQTT Topics
 const char* topic_pump     = "farm/pump"; // รองรับคำสั่งเดิมสำหรับรีเลย์ช่อง 1
@@ -134,6 +137,38 @@ void publishHeartbeat() {
 
 void publishMode() {
   client.publish(topic_mode, isAutoMode ? "AUTO" : "MANUAL", true);
+}
+
+void setupOTA() {
+  ArduinoOTA.setHostname(ota_hostname);
+  ArduinoOTA.setPassword(ota_password);
+  ArduinoOTA.setPort(8266);
+
+  ArduinoOTA.onStart([]() {
+    Serial.println("OTA update started");
+    // หยุดรีเลย์ทั้งหมดระหว่างอัปเดตเพื่อความปลอดภัย
+    for (uint8_t i = 0; i < RELAY_COUNT; i++) {
+      digitalWrite(relayPins[i], RELAY_ACTIVE_LOW ? HIGH : LOW);
+    }
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("OTA update finished");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("OTA progress: %u%%\r", (progress * 100) / total);
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("OTA error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive failed");
+    else if (error == OTA_END_ERROR) Serial.println("End failed");
+  });
+  ArduinoOTA.begin();
+  Serial.print("OTA ready: ");
+  Serial.print(ota_hostname);
+  Serial.println(" (port 8266)");
 }
 
 // ==========================================
@@ -297,6 +332,7 @@ void setup() {
   }
   Serial.println("WiFi Connected!");
   Serial.print("IP Address: "); Serial.println(WiFi.localIP());
+  setupOTA();
   
   // ตั้งค่า RTC
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -332,6 +368,7 @@ void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     return; // ข้ามการทำงานส่วนอื่นไปก่อน
   }
+  ArduinoOTA.handle();
   
   // จัดการ MQTT
   if (!client.connected()) {
