@@ -6,6 +6,7 @@
 #include <Wire.h>
 #include <RTClib.h>
 #include <EEPROM.h>
+#include <DHT.h>
 
 // ==========================================
 // การตั้งค่า MQTT (HiveMQ Cloud)
@@ -32,6 +33,8 @@ const char* topic_schedule = "farm/schedule";
 #define RELAY_COUNT 4
 #define RELAY_ACTIVE_LOW true
 const uint8_t relayPins[RELAY_COUNT] = {D5, D6, D7, D8};
+#define DHT_PIN D4
+#define DHT_TYPE DHT11
 #define I2C_SDA D2   // ขา SDA ของ RTC
 #define I2C_SCL D1   // ขา SCL ของ RTC
 
@@ -57,15 +60,18 @@ bool relayState[RELAY_COUNT] = {false, false, false, false};
 // ตัวแปรสำหรับจัดการเวลา (ไม่ต้องใช้ delay)
 unsigned long lastHeartbeat = 0;
 unsigned long lastRTCUpdate = 0;
+unsigned long lastDHTRead = 0;
 unsigned long lastMQTTReconnect = 0;
 const unsigned long HEARTBEAT_INTERVAL = 30000; // 30 วินาที
 const unsigned long RTC_INTERVAL = 1000;        // 1 วินาที
+const unsigned long DHT_INTERVAL = 5000;        // อ่าน DHT11 ทุก 5 วินาที
 const unsigned long MQTT_RECONNECT_INTERVAL = 5000; // 5 วินาที
 
 // ==========================================
 // ออบเจ็กต์ต่างๆ
 // ==========================================
 RTC_DS3231 rtc;
+DHT dht(DHT_PIN, DHT_TYPE);
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
@@ -136,6 +142,25 @@ void publishHeartbeat() {
   if (client.connected() && client.publish(topic_status, "ONLINE", true)) {
     Serial.println("Heartbeat sent: ONLINE");
   }
+}
+
+void publishDHT() {
+  if (!client.connected()) return;
+
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println("DHT11 read failed");
+    return;
+  }
+
+  char temperatureValue[12];
+  char humidityValue[12];
+  snprintf(temperatureValue, sizeof(temperatureValue), "%.1f", temperature);
+  snprintf(humidityValue, sizeof(humidityValue), "%.1f", humidity);
+  client.publish("farm/temp", temperatureValue, true);
+  client.publish("farm/hum", humidityValue, true);
+  Serial.printf("DHT11: %.1f C, %.1f %%\n", temperature, humidity);
 }
 
 void publishMode() {
@@ -331,6 +356,9 @@ void setup() {
     pinMode(relayPins[i], OUTPUT);
     digitalWrite(relayPins[i], RELAY_ACTIVE_LOW ? HIGH : LOW);
   }
+
+  // DHT11: ต่อขา DATA เข้าที่ D4 และใช้ไฟเลี้ยง 3.3V พร้อม GND
+  dht.begin();
   
   // โหลด Schedule จาก EEPROM
   loadScheduleFromEEPROM();
@@ -405,5 +433,11 @@ void loop() {
   if (currentMillis - lastHeartbeat >= HEARTBEAT_INTERVAL) {
     lastHeartbeat = currentMillis;
     if (client.connected()) publishHeartbeat();
+  }
+
+  // 3. อ่านและส่งค่า DHT11 ทุก 5 วินาที
+  if (currentMillis - lastDHTRead >= DHT_INTERVAL) {
+    lastDHTRead = currentMillis;
+    publishDHT();
   }
 }

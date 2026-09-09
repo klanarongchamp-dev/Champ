@@ -55,10 +55,14 @@
    - WiFiManager
    - PubSubClient
    - RTClib
+   - DHT sensor library by Adafruit
+   - Adafruit Unified Sensor
 3. อัปโหลดโค้ดลงบอร์ด NodeMCU V3
 4. เมื่อบอร์ดทำงานครั้งแรก ให้เชื่อมต่อ WiFi ชื่อ `SmartFarm_Setup` เพื่อตั้งค่าเครือข่าย
 5. ระบบจะเริ่มทำงานตามตารางเวลาที่ตั้งไว้ (ค่าเริ่มต้นคือ 06:00-06:10 และ 17:00-17:10)
 6. สามารถควบคุมผ่าน MQTT Dashboard ได้ตาม Topic ที่กำหนด
+
+เซ็นเซอร์ DHT11 ต่อขา DATA ที่ `D4` และส่งค่าอุณหภูมิไปที่ `farm/temp` กับความชื้นไปที่ `farm/hum` ทุก 5 วินาที
 
 ## การอัปเดตเฟิร์มแวร์ผ่าน OTA
 
