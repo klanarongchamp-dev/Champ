@@ -376,6 +376,8 @@
         let activityLog = JSON.parse(localStorage.getItem('smartfarm_logs')) || [];
         let relayNames = JSON.parse(localStorage.getItem('smartfarm_relayNames')) || ['รีเลย์ 1', 'รีเลย์ 2', 'รีเลย์ 3', 'รีเลย์ 4'];
         let relayStates = [false, false, false, false];
+        let relayLastSeen = [null, null, null, null];
+        let deviceLastSeen = null;
 
         function relayTopic(index, type) {
             return `farm/relay/${index + 1}/${type}`;
@@ -388,6 +390,7 @@
                     <div class="status-box">
                         <div class="label" id="relay-label-${index}">${name}</div>
                         <div class="value" id="relay-status-${index}">${relayStates[index] ? 'ON' : 'OFF'}</div>
+                        <div id="relay-seen-${index}" style="font-size:11px; opacity:.65; margin-top:4px;">ยังไม่มีข้อมูล</div>
                         <button class="btn ${relayStates[index] ? 'btn-danger' : 'btn-primary'}" onclick="toggleRelay(${index})" style="margin: 12px 0 0; padding: 10px;">
                             ${relayStates[index] ? 'ปิด' : 'เปิด'}
                         </button>
@@ -401,6 +404,7 @@
                         <input class="input-control" value="${name.replace(/"/g, '&quot;')}" maxlength="30" onchange="saveRelayName(${index}, this.value)" style="margin:0;">
                     </div>`).join('');
             }
+            monitorConnection();
         }
 
         function saveRelayName(index, name) {
@@ -416,6 +420,27 @@
             const nextState = !relayStates[index];
             mqttClient.publish(relayTopic(index, 'command'), nextState ? 'ON' : 'OFF');
             addLog(`${relayNames[index]}: ${nextState ? 'เปิด' : 'ปิด'}`);
+        }
+
+        function formatLastSeen(timestamp) {
+            return timestamp ? `อัปเดต ${new Date(timestamp).toLocaleTimeString('th-TH')}` : 'ยังไม่มีข้อมูล';
+        }
+
+        function monitorConnection() {
+            const now = Date.now();
+            const online = deviceLastSeen && now - deviceLastSeen < 90000;
+            const node = document.getElementById('nodeStatus');
+            if (node && mqttClient && mqttClient.connected && online) {
+                node.textContent = 'ONLINE';
+                node.style.color = '#10b981';
+            } else if (node) {
+                node.textContent = 'OFFLINE';
+                node.style.color = '#ef4444';
+            }
+            relayLastSeen.forEach((seen, index) => {
+                const element = document.getElementById(`relay-seen-${index}`);
+                if (element) element.textContent = formatLastSeen(seen);
+            });
         }
 
         // ==================== LOGGING ====================
@@ -545,6 +570,8 @@
                     const index = Number(relayMatch[1]) - 1;
                     if (index >= 0 && index < 4) {
                         relayStates[index] = msg === 'ON';
+                        relayLastSeen[index] = Date.now();
+                        deviceLastSeen = relayLastSeen[index];
                         renderRelayUI();
                         addLog(`${relayNames[index]}: ${msg}`);
                     }
@@ -553,7 +580,14 @@
                 switch(topic) {
                     case 'farm/pump/status':
                         relayStates[0] = msg === 'ON';
+                        relayLastSeen[0] = Date.now();
+                        deviceLastSeen = relayLastSeen[0];
                         renderRelayUI();
+                        break;
+                    case 'farm/status':
+                        if (msg === 'ONLINE') deviceLastSeen = Date.now();
+                        if (msg === 'OFFLINE') deviceLastSeen = null;
+                        monitorConnection();
                         break;
                     case 'farm/time':
                         document.getElementById('rtcTime').textContent = msg;
@@ -736,6 +770,7 @@
 
         // Update greeting every minute
         setInterval(updateGreeting, 60000);
+        setInterval(monitorConnection, 5000);
     </script>
 </body>
 </html>
