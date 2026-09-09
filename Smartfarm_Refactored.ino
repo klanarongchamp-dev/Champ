@@ -7,6 +7,7 @@
 #include <RTClib.h>
 #include <EEPROM.h>
 #include <DHT.h>
+#include <time.h>
 
 // ==========================================
 // การตั้งค่า MQTT (HiveMQ Cloud)
@@ -62,6 +63,9 @@ bool isAutoMode = true; // โหมดการทำงาน (true = Auto, fa
 bool modeReceivedFromBroker = false;
 unsigned long modeSyncDeadline = 0;
 bool rtcAvailable = false;
+bool rtcDetected = false;
+bool ntpAvailable = false;
+bool ntpSyncLogged = false;
 bool relayState[RELAY_COUNT] = {false, false, false, false};
 
 // ตัวแปรสำหรับจัดการเวลา (ไม่ต้องใช้ delay)
@@ -73,6 +77,7 @@ const unsigned long HEARTBEAT_INTERVAL = 30000; // 30 วินาที
 const unsigned long RTC_INTERVAL = 1000;        // 1 วินาที
 const unsigned long DHT_INTERVAL = 5000;        // อ่าน DHT11 ทุก 5 วินาที
 const unsigned long MQTT_RECONNECT_INTERVAL = 5000; // 5 วินาที
+const time_t VALID_TIME_THRESHOLD = 1700000000; // ป้องกันเวลาเริ่มต้นปี 1970
 
 // ==========================================
 // ออบเจ็กต์ต่างๆ
@@ -136,6 +141,44 @@ void saveModeToEEPROM() {
 // ==========================================
 // ฟังก์ชันควบคุมปั๊มน้ำ
 // ==========================================
+void setupNTP() {
+  // ประเทศไทยใช้ UTC+7 และไม่มี daylight saving time
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
+  Serial.println("NTP fallback enabled (Asia/Bangkok, UTC+7)");
+}
+
+void updateNTPStatus() {
+  if (rtcAvailable || WiFi.status() != WL_CONNECTED) return;
+
+  time_t now = time(nullptr);
+  if (now >= VALID_TIME_THRESHOLD) {
+    ntpAvailable = true;
+    if (!ntpSyncLogged) {
+      ntpSyncLogged = true;
+      Serial.println("RTC unavailable; using internet time from NTP");
+      if (rtcDetected) {
+        rtc.adjust(DateTime(now));
+        rtcAvailable = true;
+        Serial.println("RTC synchronized from NTP");
+      }
+    }
+  }
+}
+
+bool hasValidTime() {
+  updateNTPStatus();
+  return rtcAvailable || ntpAvailable;
+}
+
+DateTime currentDateTime() {
+  if (rtcAvailable) return rtc.now();
+  return DateTime(time(nullptr));
+}
+
+const char* currentTimeSource() {
+  return rtcAvailable ? "RTC" : (ntpAvailable ? "NTP" : "NONE");
+}
+
 void publishRelayStatus(uint8_t relayIndex) {
   char topic[32];
   snprintf(topic, sizeof(topic), "farm/relay/%u/status", relayIndex + 1);
@@ -158,8 +201,8 @@ void setPump(bool state) {
 // ฟังก์ชันส่งข้อมูลผ่าน MQTT (Publish)
 // ==========================================
 void publishTime() {
-  if (!rtcAvailable) return;
-  DateTime now = rtc.now();
+  if (!hasValidTime()) return;
+  DateTime now = currentDateTime();
   char timeString[20];
   snprintf(timeString, sizeof(timeString), "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
   client.publish(topic_time, timeString, true);
@@ -337,9 +380,9 @@ void connectMQTT() {
 // ฟังก์ชันตรวจสอบตารางเวลา (Schedule)
 // ==========================================
 void checkSchedule() {
-  if (!isAutoMode || !rtcAvailable) return;
+  if (!isAutoMode || !hasValidTime()) return;
   
-  DateTime now = rtc.now();
+  DateTime now = currentDateTime();
   char buf[6];
   snprintf(buf, sizeof(buf), "%02d:%02d", now.hour(), now.minute());
   String currentTime = String(buf);
@@ -414,13 +457,17 @@ void setup() {
     Serial.println("WARNING: RTC NOT FOUND!");
     rtcAvailable = false;
   } else {
-    rtcAvailable = true;
+    rtcDetected = true;
     Serial.println("RTC OK");
     if (rtc.lostPower()) {
-      Serial.println("RTC lost power, let's set the time!");
-      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+      Serial.println("RTC lost power; waiting for NTP time");
+      rtcAvailable = false;
+    } else {
+      rtcAvailable = true;
     }
   }
+
+  setupNTP();
   
   // ตั้งค่า MQTT
   espClient.setInsecure(); // ไม่ตรวจสอบ Certificate
@@ -445,6 +492,7 @@ void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     return; // ข้ามการทำงานส่วนอื่นไปก่อน
   }
+  updateNTPStatus();
   ArduinoOTA.handle();
   
   // จัดการ MQTT
