@@ -12,8 +12,8 @@
 // ==========================================
 const char* mqtt_server = "e384381d24534ec1bdf7413845bacfa4.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
-const char* mqtt_user = "smartfarm";
-const char* mqtt_pass = "Kla12345";
+const char* mqtt_user = "smartfarm-device";
+const char* mqtt_pass = "kla12345";
 const char* ota_hostname = "smartfarm-esp8266";
 const char* ota_password = "SmartFarmOTA";
 
@@ -23,6 +23,7 @@ const char* topic_status   = "farm/status";
 const char* topic_time     = "farm/time";
 const char* topic_mode     = "farm/mode";
 const char* topic_schedule = "farm/schedule";
+// รีเลย์ช่อง 1-4 ใช้ farm/relay/<ช่อง>/command และ /status
 
 // ==========================================
 // การตั้งค่า Hardware
@@ -131,8 +132,9 @@ void publishTime() {
 }
 
 void publishHeartbeat() {
-  client.publish(topic_status, "ONLINE", true);
-  Serial.println("Heartbeat sent: ONLINE");
+  if (client.connected() && client.publish(topic_status, "ONLINE", true)) {
+    Serial.println("Heartbeat sent: ONLINE");
+  }
 }
 
 void publishMode() {
@@ -251,7 +253,8 @@ void connectMQTT() {
     
     Serial.print("Connecting to MQTT...");
     // กำหนด Last Will and Testament (LWT) สำหรับแจ้ง Offline
-    if (client.connect("ESP8266Farm", mqtt_user, mqtt_pass, topic_status, 0, true, "OFFLINE")) {
+    String clientId = String("ESP8266Farm-") + String(ESP.getChipId(), HEX);
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_pass, topic_status, 0, true, "OFFLINE")) {
       Serial.println("Connected!");
       
       // สมัครรับข้อมูล Topics ที่ต้องการ
@@ -263,6 +266,8 @@ void connectMQTT() {
       // ส่งสถานะเริ่มต้น
       for (uint8_t i = 0; i < RELAY_COUNT; i++) publishRelayStatus(i);
       publishMode();
+      publishHeartbeat();
+      lastHeartbeat = millis();
     } else {
       Serial.print("Failed, rc=");
       Serial.println(client.state());
@@ -357,6 +362,7 @@ void setup() {
   // ตั้งค่า MQTT
   espClient.setInsecure(); // ไม่ตรวจสอบ Certificate
   client.setServer(mqtt_server, mqtt_port);
+  client.setKeepAlive(30);
   client.setCallback(mqttCallback);
   
   // เปิดใช้งาน Watchdog Timer
