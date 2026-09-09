@@ -203,14 +203,22 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
   // 2. เปลี่ยนโหมด Auto/Manual
   else if (topicString == topic_mode) {
+    bool previousMode = isAutoMode;
     if (msg == "AUTO") {
       isAutoMode = true;
-      Serial.println("Mode changed to AUTO");
     } else if (msg == "MANUAL") {
       isAutoMode = false;
-      Serial.println("Mode changed to MANUAL");
+    } else {
+      Serial.println("Ignored: invalid mode");
+      return;
     }
-    publishMode();
+    if (previousMode != isAutoMode) {
+      Serial.print("Mode changed to ");
+      Serial.println(isAutoMode ? "AUTO" : "MANUAL");
+      publishMode();
+    } else {
+      Serial.println("Mode unchanged; no MQTT reply");
+    }
   }
   // 3. ตั้งค่า Schedule (รูปแบบ: HH:MM,HH:MM,HH:MM,HH:MM)
   else if (String(topic) == topic_schedule) {
