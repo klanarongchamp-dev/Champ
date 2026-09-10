@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🌱 สวนลุงนะ Smart Farm - Admin V6</title>
     <meta name="theme-color" content="#10b981">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Smart Farm">
+    <link rel="apple-touch-icon" href="suanlungna_icon_180.png">
     <link rel="manifest" href="manifest.json">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -152,6 +157,8 @@
         @keyframes slideUp { from { transform: translateX(-50%) translateY(100px); opacity: 0; } to { transform: translateX(-50%) translateY(0); opacity: 1; } }
 
         .hidden { display: none !important; }
+        .install-help { margin-top: 12px; font-size: 13px; opacity: .9; }
+        .install-help button { width: auto; margin: 0; padding: 9px 14px; }
     </style>
 </head>
 <body class="notranslate">
@@ -188,6 +195,9 @@
                     <p id="greetingText">สวัสดี</p>
                     <h2 id="farmName">สวนลุงนะ Smart Farm</h2>
                 </div>
+            </div>
+            <div id="installHelp" class="install-help hidden">
+                <button class="btn btn-outline" onclick="showInstallInstructions()"><i class="fas fa-mobile-alt"></i> เพิ่มไว้หน้าจอโฮม</button>
             </div>
         </div>
 
@@ -738,6 +748,34 @@
             `).join('');
         }
 
+        // ==================== PWA INSTALL ====================
+        let deferredInstallPrompt = null;
+
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            deferredInstallPrompt = event;
+            document.getElementById('installHelp')?.classList.remove('hidden');
+        });
+
+        window.addEventListener('appinstalled', () => {
+            deferredInstallPrompt = null;
+            document.getElementById('installHelp')?.classList.add('hidden');
+            showToast('ติดตั้ง Smart Farm บนหน้าจอโฮมแล้ว');
+        });
+
+        async function showInstallInstructions() {
+            if (deferredInstallPrompt) {
+                deferredInstallPrompt.prompt();
+                await deferredInstallPrompt.userChoice;
+                deferredInstallPrompt = null;
+                return;
+            }
+            const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+            showToast(isIOS
+                ? 'กดปุ่มแชร์ แล้วเลือก Add to Home Screen / เพิ่มไปยังหน้าจอโฮม'
+                : 'เปิดเมนูเบราว์เซอร์ แล้วเลือก Install app / เพิ่มลงในหน้าจอหลัก');
+        }
+
         // ==================== UTILITIES ====================
         function showToast(msg) {
             const toast = document.createElement('div');
@@ -749,6 +787,9 @@
 
         // ==================== INIT ====================
         window.addEventListener('load', () => {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('./service-worker.js').catch(error => console.warn('PWA service worker:', error));
+            }
             const savedUser = localStorage.getItem('smartfarm_currentUser');
             if (savedUser) {
                 currentUser = JSON.parse(savedUser);
