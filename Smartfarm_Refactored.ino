@@ -72,10 +72,12 @@ unsigned long lastHeartbeat = 0;
 unsigned long lastRTCUpdate = 0;
 unsigned long lastDHTRead = 0;
 unsigned long lastMQTTReconnect = 0;
+unsigned long lastWiFiReconnect = 0;
 const unsigned long HEARTBEAT_INTERVAL = 30000; // 30 วินาที
 const unsigned long RTC_INTERVAL = 1000;        // 1 วินาที
 const unsigned long DHT_INTERVAL = 5000;        // อ่าน DHT11 ทุก 5 วินาที
 const unsigned long MQTT_RECONNECT_INTERVAL = 5000; // 5 วินาที
+const unsigned long WIFI_RECONNECT_INTERVAL = 10000; // 10 วินาที
 const time_t VALID_TIME_THRESHOLD = 1700000000; // ป้องกันเวลาเริ่มต้นปี 1970
 
 // ==========================================
@@ -245,6 +247,7 @@ void setupOTA() {
     Serial.println("OTA update started");
     // หยุดรีเลย์ทั้งหมดระหว่างอัปเดตเพื่อความปลอดภัย
     for (uint8_t i = 0; i < RELAY_COUNT; i++) {
+      relayState[i] = false;
       digitalWrite(relayPins[i], RELAY_ACTIVE_LOW ? HIGH : LOW);
     }
   });
@@ -471,6 +474,7 @@ void setup() {
   espClient.setInsecure(); // ไม่ตรวจสอบ Certificate
   client.setServer(mqtt_server, mqtt_port);
   client.setKeepAlive(30);
+  client.setSocketTimeout(5);
   client.setCallback(mqttCallback);
   
   // เปิดใช้งาน Watchdog Timer
@@ -488,6 +492,12 @@ void loop() {
   
   // ตรวจสอบการเชื่อมต่อ WiFi (Auto Reconnect)
   if (WiFi.status() != WL_CONNECTED) {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastWiFiReconnect >= WIFI_RECONNECT_INTERVAL) {
+      lastWiFiReconnect = currentMillis;
+      Serial.println("WiFi disconnected; retrying connection...");
+      WiFi.reconnect();
+    }
     return; // ข้ามการทำงานส่วนอื่นไปก่อน
   }
   updateNTPStatus();

@@ -560,7 +560,7 @@
                 document.getElementById('nodeStatus').style.color = '#10b981';
                 addLog('เชื่อมต่อ MQTT สำเร็จ');
                 
-                mqttClient.subscribe(['farm/pump/status', 'farm/relay/+/status', 'farm/time', 'farm/soil', 'farm/light', 'farm/status', 'farm/mode/state', 'farm/temp', 'farm/hum']);
+                mqttClient.subscribe(['farm/relay/+/status', 'farm/time', 'farm/soil', 'farm/light', 'farm/status', 'farm/mode/state', 'farm/temp', 'farm/hum']);
             });
 
             mqttClient.on('message', (topic, message) => {
@@ -580,12 +580,6 @@
                     return;
                 }
                 switch(topic) {
-                    case 'farm/pump/status':
-                        relayStates[0] = msg === 'ON';
-                        relayLastSeen[0] = Date.now();
-                        deviceLastSeen = relayLastSeen[0];
-                        renderRelayUI();
-                        break;
                     case 'farm/status':
                         if (msg === 'ONLINE') deviceLastSeen = Date.now();
                         if (msg === 'OFFLINE') deviceLastSeen = null;
