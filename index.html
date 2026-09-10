@@ -790,6 +790,11 @@
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('./service-worker.js').catch(error => console.warn('PWA service worker:', error));
             }
+            const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            if (isMobile && !isStandalone) {
+                document.getElementById('installHelp')?.classList.remove('hidden');
+            }
             const savedUser = localStorage.getItem('smartfarm_currentUser');
             if (savedUser) {
                 currentUser = JSON.parse(savedUser);
